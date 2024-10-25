@@ -176,8 +176,16 @@ void AP_Motors6DOF::setup_motors(motor_frame_class frame_class, motor_frame_type
         break;
 
     case SUB_FRAME_CUSTOM:
+	    //            ORGINAL:  Motor #      Roll Factor     Pitch Factor    Yaw Factor      Throttle Factor     Forward Factor      Lateral Factor  Testing Order
+		
+	 //                 Motor #              Roll Factor     Pitch Factor    Yaw Factor     Throttle Factor     Forward Factor OK      Yaw Factor OK  Testing Order
         // Put your custom motor setup here
-        //break;
+		_frame_class_string = "SUB_FRAME_CUSTOM";
+        add_motor_raw_6dof(AP_MOTORS_MOT_1,     0,              0,              0.7f,              0,                   2.0f,                 0,           1);
+        add_motor_raw_6dof(AP_MOTORS_MOT_2,     0,              0,                0,              2.0f,                      0,                    0,           2);
+        add_motor_raw_6dof(AP_MOTORS_MOT_3,     0,              0,              -0.7f,              0,                   2.0f,                0,           3);
+        add_motor_raw_6dof(AP_MOTORS_MOT_4,     0,              2.0f,              0,             0,                  -1.0f,                    0,           4);
+        break;
 
     case SUB_FRAME_SIMPLEROV_3:
         _frame_class_string = "SIMPLEROV_3";
@@ -232,9 +240,7 @@ void AP_Motors6DOF::output_min()
 
 int16_t AP_Motors6DOF::calc_thrust_to_pwm(float thrust_in) const
 {
-    int16_t range_up = get_pwm_output_max() - 1500;
-    int16_t range_down = 1500 - get_pwm_output_min();
-    return 1500 + thrust_in * (thrust_in > 0 ? range_up : range_down);
+    return constrain_int16(1500 + thrust_in * 400, get_pwm_output_min(), get_pwm_output_max());
 }
 
 void AP_Motors6DOF::output_to_motors()
@@ -359,7 +365,6 @@ void AP_Motors6DOF::output_armed_stabilizing()
         }
     }
 
-#if AP_BATTERY_ENABLED
     const AP_BattMonitor &battery = AP::battery();
 
 	// Current limiting
@@ -370,13 +375,15 @@ void AP_Motors6DOF::output_armed_stabilizing()
 
     float _batt_current_delta = _batt_current - _batt_current_last;
 
-    float _current_change_rate = _batt_current_delta / _dt;
+    float loop_interval = 1.0f/_loop_rate;
 
-    float predicted_current = _batt_current + (_current_change_rate * _dt * 5);
+    float _current_change_rate = _batt_current_delta / loop_interval;
 
-    float batt_current_ratio = _batt_current / _batt_current_max;
+    float predicted_current = _batt_current + (_current_change_rate * loop_interval * 5);
 
-    float predicted_current_ratio = predicted_current / _batt_current_max;
+    float batt_current_ratio = _batt_current/_batt_current_max;
+
+    float predicted_current_ratio = predicted_current/_batt_current_max;
     _batt_current_last = _batt_current;
 
     if (predicted_current > _batt_current_max * 1.5f) {
@@ -384,8 +391,7 @@ void AP_Motors6DOF::output_armed_stabilizing()
     } else if (_batt_current < _batt_current_max && predicted_current > _batt_current_max) {
         batt_current_ratio = predicted_current_ratio;
     }
-    _output_limited += (_dt / (_dt + _batt_current_time_constant)) * (1 - batt_current_ratio);
-#endif
+    _output_limited += (loop_interval/(loop_interval+_batt_current_time_constant)) * (1 - batt_current_ratio);
 
     _output_limited = constrain_float(_output_limited, 0.0f, 1.0f);
 
